@@ -4,3 +4,4 @@ matplotlib
 yfinance==0.2.28
 streamlit
 mysql-connector-python
+psycopg2

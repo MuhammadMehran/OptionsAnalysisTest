@@ -5,8 +5,7 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime as dt
-import mysql.connector
-
+import psycopg2
 def get_intraday_data(symbol):
     df = pd.DataFrame()
     df['Symbol'] = ['Current Price', 'Volume', "Today's Highest Price",
@@ -190,90 +189,92 @@ def calculate_options_metrics(symbol):
     plt.xticks(rotation=45)
 
     transposed = pd.DataFrame(data).T
+    header_names = ['Value']
+    transposed.columns = header_names
     return transposed, fig
 
 
 def add_email_to_db(email):
-    mydb = mysql.connector.connect(
-        host=st.secrets["DATABASE_HOST"],
-        user=st.secrets["DATABASE_USERNAME"],
-        password=st.secrets["DATABASE_PASSWORD"],
-        database=st.secrets["DATABASE_DB"],
-        port=st.secrets["DATABASE_PORT"]
-    )
+    
+    mydb = psycopg2.connect(database=st.secrets["DATABASE_DB"], user = st.secrets["DATABASE_USERNAME"], password = st.secrets["DATABASE_PASSWORD"],
+                        host=st.secrets["DATABASE_HOST"], port = st.secrets["DATABASE_PORT"])
 
     mycursor = mydb.cursor()
 
-    sql = "INSERT INTO login (email) VALUES (%s)"
-    val = (email, )
+    sql = "INSERT INTO login (email) VALUES (%s) ON DUPLICATE KEY UPDATE email=(%s)"
+    sql = "INSERT INTO login (email) VALUES (%s) ON CONFLICT (email) DO UPDATE SET email =(%s);"
+    val = (email, email)
     mycursor.execute(sql, val)
 
     mydb.commit()
 
 # Streamlit app
 st.set_page_config(layout='centered', page_icon='📉', page_title='Option Chain Analysis')
-st.markdown("<h2 style='text-align: center; font-family: Arial, sans-serif; font-size: 72px; font-weight: bold;'>Options Analysis 1.0</h2>", unsafe_allow_html=True)
-st.markdown("<h2 style='text-align: center;'>by Szymanski</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; font-family: Arial, sans-serif; font-size: 72px; font-weight: bold;'>Options Analyzer 1.0</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center;'>by Piotr Szymanski</h2>", unsafe_allow_html=True)
+
+description = """
+This app provides the expected stock move until its nearest options expiration date
+"""
+
+st.write(description)
 
 
-
+# Input for email
 st.session_state.user_email = None
 
 placeholder = st.empty()
 with placeholder.container():
-    email = st.text_input("Please enter email")
+    email = st.text_input("Please enter your email. It is optional but you will be informed of any updates or new apps")
     if email:
         if '@' not in email:
-            st.error('Please enter valid email address')
+            st.error('Please enter a valid email address')
         else:
+            # Assuming you have a function add_email_to_db(email) to save the email
             add_email_to_db(email)
             st.session_state.user_email = email
             placeholder.empty()
 
 if st.session_state.user_email:
     st.success(f'Welcome {st.session_state.user_email}!')
-    # Input for stock symbol
-    symbol = st.text_input("Enter a stock symbol (e.g., AAPL):")
 
-    if symbol:
-        st.markdown("<h1 style='text-align: center;'>Intraday Data</h2>", unsafe_allow_html=True)
-        intraday_data = get_intraday_data(symbol)
-        
-        st.dataframe(intraday_data.set_index('Symbol'), use_container_width=True)
-        
-        
+# Input for stock symbol
+symbol = st.text_input("Enter a stock symbol (e.g., AAPL):")
 
-        if symbol != 'SPY':
-            st.markdown("<h1 style='text-align: left;'>Relative Performance to SPY</h1>", unsafe_allow_html=True)
-            fig2 = relative_performance(symbol)
-            st.pyplot(fig2)
+if symbol:  # This line should have the same indentation level as the previous line
+    st.markdown("<h1 style='text-align: center;'>Intraday Data</h2>", unsafe_allow_html=True)
+    intraday_data = get_intraday_data(symbol)
 
-        st.markdown("<h1 style='text-align: center;'>Option Chain Analysis</h2>", unsafe_allow_html=True)
-        disclosure = """
-        Expected Stock Move: This is a quick estimation of price move of the underlying using the At-the-Money (ATM) options straddles with closest expiration date within
-        1 standard deviation. Each strike is placed at the 84% probability. When added together,
-        this means there is a 68% chance the underlying will stay between the strikes.
+    st.dataframe(intraday_data.set_index('Symbol'), use_container_width=True)
 
-        Please allow a moment for a table & chart to load... 
-        """
-        st.write(disclosure)
+    if symbol != 'SPY':
+        st.markdown("<h1 style='text-align: left;'>Relative Performance to SPY</h1>", unsafe_allow_html=True)
+        fig2 = relative_performance(symbol)
+        st.pyplot(fig2)
 
-        options_metrics, fig = calculate_options_metrics(symbol)
-        st.dataframe(options_metrics, use_container_width=True)
-        st.pyplot(fig)
+    st.markdown("<h1 style='text-align: center;'>Option Chain Analysis</h2>", unsafe_allow_html=True)
+    disclosure = """
+    Expected Stock Move: This is a quick estimation of the price move of the underlying using the At-the-Money (ATM) options straddles with the closest expiration date within 1 standard deviation. Each strike is placed at the 84% probability. When added together, this means there is a 68% chance the underlying will stay between the strikes.
 
-        st.markdown("<h3 style='text-align: center;'>Disclaimer</h2>", unsafe_allow_html=True)
+    PLEASE allow a moment for a table & chart to load...
+    """
+    st.write(disclosure)
+
+    options_metrics, fig = calculate_options_metrics(symbol)
+    st.dataframe(options_metrics, use_container_width=True)
+    st.pyplot(fig)
+
+    st.markdown("<h3 style='text-align: center;'>Disclaimer</h2>", unsafe_allow_html=True)
 
 content = """
 The content is solely for educational and informational purposes. It is not trading or investment advice or a recommendation, nor is it intended to be.
 This should not be viewed as a licensed financial advisor, registered investment advisor, or a registered broker-dealer.
 No responsibility for any errors, omissions, or representations in this content.
-Any mistake, error, or discrepancy that is discovered may be brought to my attention, and appropriate efforts will be made to correct
-it to the greatest extent possible.
+Any mistake, error, or discrepancy that is discovered may be brought to my attention, and appropriate efforts will be made to correct it to the greatest extent possible.
 
-If you have questions or suggestions for improvement, please don't hesistate to reach out: szymanskiresearch@protonmail.com
+If you have questions or suggestions for improvement, please don't hesitate to reach out: szymanskiresearch@protonmail.com
 
-
+Click on the following link to support any future upgrades or new projects: https://www.buymeacoffee.com/Pszymanski
 """
 
 st.write(content)
